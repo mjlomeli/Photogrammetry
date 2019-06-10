@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.mplot3d import Axes3D
 
+username = 'mjlomeli'
+key = 'BY7shgwcOm0WSTKikJzC'
+
+
 def set_axes_equal_3d(ax):
     '''Make axes of 3D plot have equal scale so that spheres appear as spheres,
     cubes as cubes, etc..  This is one possible solution to Matplotlib's
@@ -19,6 +23,7 @@ def set_axes_equal_3d(ax):
     ax.set_xlim3d([origin[0] - radius, origin[0] + radius])
     ax.set_ylim3d([origin[1] - radius, origin[1] + radius])
     ax.set_zlim3d([origin[2] - radius, origin[2] + radius])
+
 
 def label_axes(ax):
     '''Label x,y,z axes with default labels'''
