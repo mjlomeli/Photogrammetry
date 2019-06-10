@@ -1,22 +1,24 @@
-#
-# To run:
-#
-# Install opencv modules in Anaconda environment:
-#
-#   conda install opencv
-#   pip install --upgrade pip
-#   pip install opencv-contrib-python
-#
-# Run calibrate.py from the commandline:
-#
-#   python calibrate.py
+#!/usr/bin/env python
+"""
+Should be the docstring with a description of calibrate.
 
-from pathlib import Path
+If the description is long, the first line should be a short summary
+that makes sense on its own, separated from the rest by a newline.
+"""
+
 import pickle
 import numpy as np
 import cv2
+from pathlib import Path
+
+__authors__ = ["Mauricio Lomeli", "Charless Fowlkes"]
+__date__ = "6/10/2019"
+__maintainer__ = "Mauricio Lomeli"
+__email__ = "mjlomeli@uci.edu"
+__status__ = "Prototype"
 
 images_folder = Path.cwd() / Path("data") / Path("calib_jpg_u")
+
 
 class Calibrate:
     def __init__(self, images=None, shape=(6, 8), length=2.8):
@@ -78,6 +80,9 @@ class Calibrate:
         imgpoints = []  # 2d points in image plane.
 
         # Make a list of calibration images
+        count = 0
+        end = len(self.cam_calibfiles) + 1
+        printProgressBar(count, end, suffix='calibrating {}/{} files'.format(count, end))
         for idx, fname in enumerate(self.cam_calibfiles):
             img = cv2.imread(str(fname))
             img_size = (img.shape[1], img.shape[0])
@@ -95,7 +100,9 @@ class Calibrate:
                 cv2.drawChessboardCorners(img, (shape[1], shape[0]), corners, ret)
                 cv2.imshow('img', img)
                 cv2.waitKey(500)
-
+            count += 1
+            printProgressBar(count, end, suffix='calibrating {}/{} files'.format(count, end))
+        printProgressBar(count, end, suffix='Writing to pickle')
         cv2.destroyAllWindows()
 
         ret, K, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_size, None, None)
@@ -107,6 +114,8 @@ class Calibrate:
         with open(resultfile, 'wb') as w:
             calib = dict(self)
             pickle.dump(calib, w)
+            count += 1
+        printProgressBar(count, end, suffix='Writing to pickle.')
 
     def __iter__(self):
         keys = ['fx', 'fy', 'cx', 'cy', 'dist']
@@ -123,3 +132,25 @@ class Calibrate:
         calib += "\tdist:\t" + "array(" + str(self.dist) + ")\n"
         calib += "}"
         return calib
+
+
+def printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█'):
+    """
+    Displays a progress bar for each iteration.
+    Title: Progress Bar
+    Author: Benjamin Cordier
+    Date: 6/10/2019
+    Code version: n/a
+    Availability: https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
+    """
+    if int(iteration % (total / 100)) == 0 or iteration == total or prefix is not '' or suffix is not '':
+        # calculated percentage of completeness
+        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+        filledLength = int(length * iteration // total)
+        # modifies the bar
+        bar = fill * filledLength + '-' * (length - filledLength)
+        # Creates the bar
+        print('\r\t\t{} |{}| {}% {}'.format(prefix, bar, percent, suffix), end='\r')
+        # Print New Line on Complete
+        if iteration == total:
+            print()

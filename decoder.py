@@ -8,14 +8,15 @@ Images are encoded into binary and translated to graycode, then decoded into dec
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial import Delaunay
+from scipy.optimize import leastsq
 from pathlib import Path
 
-IMAGE_FOLDER = Path.cwd() / Path("data") / Path("teapot_small")
-CALIBRATION = Path.cwd() / Path("data") / Path("calib_png_small")
 
-__author__ = "Mauricio Lomeli"
+MODELS = Path.cwd() / Path("models")
+
+__authors__ = ["Mauricio Lomeli", "Charless Fowlkes"]
+__credits__ = ["Benjamin Cordier"]
 __date__ = "6/10/2019"
-__credits__ = ["Charless Fowlkes"]
 __maintainer__ = "Mauricio Lomeli"
 __email__ = "mjlomeli@uci.edu"
 __status__ = "Prototype"
@@ -30,9 +31,7 @@ class Decoder:
         :param camL: Camera, left camera object
         :param camR: Camera, right camera object
         """
-        prefixR = str(IMAGE_FOLDER) + imprefixR
-        prefixL = str(IMAGE_FOLDER) + imprefixL
-        pts2L, pts2R, pts3 = self.reconstruct(prefixL, prefixR, threshold, camL, camR)
+        pts2L, pts2R, pts3 = self.reconstruct(imprefixL, imprefixR, threshold, camL, camR)
 
         self.pts3 = pts3
         self.pts2R = pts2R
@@ -61,8 +60,6 @@ class Decoder:
         code : 2D numpy.array (dtype=float)
 
         mask : 2D numpy.array (dtype=float)
-
-
         """
         nbits = 10
 
@@ -125,7 +122,6 @@ class Decoder:
         pts2L,pts2R : 2D numpy.array (dtype=float)
 
         pts3 : 2D numpy.array (dtype=float)
-
         """
 
         CLh, maskLh = self.decode(imprefixL, 0, threshold)
@@ -356,8 +352,6 @@ class Camera:
     cam.c : 2x1 vector  --- offset of principle point
     cam.R : 3x3 matrix --- camera rotation
     cam.t : 3x1 vector --- camera translation
-
-
     """
 
     def __init__(self, f, c, R, t):
@@ -382,7 +376,6 @@ class Camera:
         -------
         pts2 : 2D numpy.array (dtype=float)
             Image coordinates of N points stored in an array of shape (2,N)
-
         """
         assert (pts3.shape[0] == 3)
 
@@ -410,7 +403,6 @@ class Camera:
         params : 1D numpy.array (dtype=float)
             Camera parameters we are optimizing over stored in a vector
             params[0:2] are the rotation angles, params[2:5] are the translation
-
         """
         self.R = makerotation(params[0], params[1], params[2])
         self.t = np.array([[params[3]], [params[4]], [params[5]]])
@@ -441,7 +433,6 @@ def triangulate(pts2L, camL, pts2R, camR):
     -------
     pts3 : 2D numpy.array (dtype=float)
         (3,N) array containing 3D coordinates of the points in global coordinates
-
     """
 
     npts = pts2L.shape[1]
@@ -491,7 +482,6 @@ def residuals(pts3, pts2, cam, params):
     -------
     residual : 1D numpy.array (dtype=float)
         Vector of residual 2D projection errors of size 2*N
-
     """
 
     cam.update_extrinsics(params)
@@ -520,14 +510,33 @@ def calibratePose(pts3, pts2, cam_init, params_init):
     -------
     cam_opt : Camera
         Refined estimate of camera with updated R,t parameters
-
     """
 
     # define our error function
     efun = lambda params: residuals(pts3, pts2, cam_init, params)
-    popt, _ = scipy.optimize.leastsq(efun, params_init)
+    popt, _ = leastsq(efun, params_init)
     cam_init.update_extrinsics(popt)
 
     return cam_init
 
 
+def __printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█'):
+    """ 
+    Displays a progress bar for each test.
+    Title: Progress Bar
+    Author: Benjamin Cordier
+    Date: 6/10/2019
+    Code version: n/a
+    Availability: https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
+    """
+    if int(iteration % (total / 100)) == 0 or iteration == total or prefix is not '' or suffix is not '':
+        # calculated percentage of completeness
+        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+        filledLength = int(length * iteration // total)
+        # modifies the bar
+        bar = fill * filledLength + '-' * (length - filledLength)
+        # Creates the bar
+        print('\r\t\t{} |{}| {}% {}'.format(prefix, bar, percent, suffix), end='\r')
+        # Print New Line on Complete
+        if iteration == total:
+            print()
