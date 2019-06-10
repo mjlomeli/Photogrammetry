@@ -7,7 +7,7 @@ with a checkerboard to calibrate a camera.
 
 import sys
 import numpy as np
-from calibrate import Calibrate, find_rmv_files
+from calibrate import Calibrate
 from scipy.optimize import leastsq
 from pathlib import Path
 
@@ -169,6 +169,20 @@ def calibratePose(pts3, pts2, cam_init, params_init):
     cam_init.update_extrinsics(popt)
 
     return cam_init
+
+def find_rmv_files(directory: Path):
+    """
+    Removes all calibration files in the data folders.
+    :param directory: Path of the data folder.
+    """
+    calibration_file = directory / Path('calibration.pickle')
+
+    if calibration_file.exists():
+        calibration_file.unlink()
+
+    for path in directory.iterdir():
+        if path.is_dir():
+            find_rmv_files(path)
 
 
 if __name__ == "__main__":

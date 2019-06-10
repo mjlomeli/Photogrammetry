@@ -11,6 +11,7 @@ import numpy as np
 from scipy.spatial import Delaunay
 import pickle
 from pathlib import Path
+from camera import Camera
 
 
 DATA_FOLDER = Path.cwd() / Path("data")
@@ -38,6 +39,8 @@ class Decoder:
         self.path = path
         self.camL = camL
         self.camR = camR
+        self.imprefixL = imprefixL
+        self.imprefixR = imprefixR
 
         if path.exists() and path.is_dir():
             pickle_file = path / Path('intrinsics.pickle')
@@ -88,7 +91,7 @@ class Decoder:
                 intrinsics['camR'] = self.camR
                 pickle.dump(intrinsics, f)
 
-    def decode(self, imprefix: str, start: int, threshold: int):
+    def decode(self, imprefix: str, start: int, threshold: float):
         """
         Decode 10bit gray code pattern with the given difference
         threshold.  We assume the images come in consective pairs
@@ -115,8 +118,11 @@ class Decoder:
 
         imgs = list()
         imgs_inv = list()
-        print('loading', end='')
+
+        count, end = 0, len(range(nbits*3)) + len(range(1, nbits)) + 1  # total of iterations in entire function
+        printProgressBar(count, end, prefix='Averaging', suffix='{}/{} files decoded. '.format(count, end))
         for i in range(start, start + 2 * nbits, 2):
+            # Todo: FileNotFoundError: [Errno 2] No such file or directory: 'C100.png'
             fname0 = '%s%2.2d.png' % (imprefix, i)
             fname1 = '%s%2.2d.png' % (imprefix, i + 1)
             print('(', i, i + 1, ')', end='')
@@ -130,6 +136,8 @@ class Decoder:
                 img_inv = np.mean(img_inv, axis=2)
             imgs.append(img)
             imgs_inv.append(img_inv)
+            count += 1
+            printProgressBar(count, end, prefix='Averaging', suffix='{}/{} files decoded. '.format(count, end))
 
         (h, w) = imgs[0].shape
         print('\n')
@@ -139,16 +147,23 @@ class Decoder:
         for i in range(nbits):
             gcd[:, :, i] = imgs[i] > imgs_inv[i]
             mask = mask * (np.abs(imgs[i] - imgs_inv[i]) > threshold)
+            count += 1
+            printProgressBar(count, end, prefix='Gray Code', suffix='{}/{} files decoded. '.format(count, end))
 
         bcd = np.zeros((h, w, nbits))
         bcd[:, :, 0] = gcd[:, :, 0]
         for i in range(1, nbits):
             bcd[:, :, i] = np.logical_xor(bcd[:, :, i - 1], gcd[:, :, i])
+            count += 1
+            printProgressBar(count, end, prefix='Binary', suffix='{}/{} files decoded. '.format(count, end))
 
         code = np.zeros((h, w))
         for i in range(nbits):
             code = code + np.power(2, (nbits - i - 1)) * bcd[:, :, i]
+            count += 1
+            printProgressBar(count, end, prefix='Decimal', suffix='{}/{} files decoded. '.format(count, end))
 
+        printProgressBar(count+1, end, prefix='Decoding', suffix='Finished decoding. ')
         return code, mask
 
     def reconstruct(self, imprefixL, imprefixR, threshold, camL, camR):
@@ -312,11 +327,11 @@ class Decoder:
         pass
 
     def __str__(self):
-        calib = "{\n"
+        decoder = "{\n"
         for key in self.keys:
-            calib += "\t" + key + ":\t" + str(eval('self.' + key)) + ",\n"
-        calib += "}"
-        return calib
+            decoder += "\t" + key + ":\t" + str(eval('self.' + key)) + ",\n"
+        decoder += "}"
+        return decoder
 
     def __iter__(self):
         for key in self.keys:
@@ -384,7 +399,7 @@ def triangulate(pts2L, camL, pts2R, camR):
     return pts3
 
 
-def __printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█'):
+def printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█'):
     """ 
     Displays a progress bar for each test.
     Title: Progress Bar
@@ -429,18 +444,26 @@ if __name__ == "__main__":
     -f: Runs a lower resolution of the images for faster calculations (for debugging).
     """
     intrinsic_path = None
+    calib_path = None
     title = "Decoder of {} Resolution"
     if len(sys.argv) > 1:
         if '-r' in sys.argv:
             find_rmv_files(DATA_FOLDER)
         if '-f' in sys.argv:
             intrinsic_path = DATA_FOLDER / Path('teapot_small')
+            calib_path = DATA_FOLDER / Path('calib_png_small')
             title = title.format('Low')
     else:
         intrinsic_path = DATA_FOLDER / Path('teapot')
+        calib_path = DATA_FOLDER / Path('calib_jpg_u')
         title = title.format('High')
 
-    decoder = Decoder(intrinsic_path)
+    threshold = 0.02
+
+    camera_C0 = Camera(calib_path, 'C0', None)
+    camera_C1 = Camera(calib_path, 'C1', None)
+
+    decoder = Decoder('C1', 'C0',threshold, camera_C1, camera_C0, intrinsic_path)
     print(title)
     print(decoder)
     print()
