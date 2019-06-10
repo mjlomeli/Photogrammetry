@@ -22,9 +22,17 @@ __status__ = "Prototype"
 
 
 class Decoder:
-    def __init__(self, imprefixL, imprefixR, threshold, camL, camR):
-        # TODO: create the initializer
-        pts2L, pts2R, pts3 = self.reconstruct(imprefixL, imprefixR, threshold, camL, camR)
+    def __init__(self, imprefixL: str, imprefixR: str, threshold: int, camL, camR):
+        """
+        :param imprefixL: string, left camera folder prefix
+        :param imprefixR: string, right camera folder prefix
+        :param threshold: int, the threshold
+        :param camL: Camera, left camera object
+        :param camR: Camera, right camera object
+        """
+        prefixR = str(IMAGE_FOLDER) + imprefixR
+        prefixL = str(IMAGE_FOLDER) + imprefixL
+        pts2L, pts2R, pts3 = self.reconstruct(prefixL, prefixR, threshold, camL, camR)
 
         self.pts3 = pts3
         self.pts2R = pts2R
