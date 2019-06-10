@@ -6,14 +6,12 @@ with a checkerboard to calibrate a camera.
 """
 
 import sys
-import pickle
 import numpy as np
 from calibrate import Calibrate, find_rmv_files
 from scipy.optimize import leastsq
 from pathlib import Path
 
 __authors__ = ["Mauricio Lomeli", "Charless Fowlkes"]
-__credits__ = ["Benjamin Cordier"]
 __date__ = "6/10/2019"
 __maintainer__ = "Mauricio Lomeli"
 __email__ = "mjlomeli@uci.edu"
