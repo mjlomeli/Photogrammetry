@@ -41,7 +41,7 @@ class Camera(Calibrate):
         self.t = t
 
     def __str__(self):
-        return f'Camera : \n f={self.f} \n c={self.c.T} \n R={self.R} \n t = {self.t.T}'
+        return f'Camera_{self.imprefix} : \n f={self.f} \n c={self.c.T} \n R={self.R} \n t = {self.t.T}'
 
     def project(self, pts3):
         """
@@ -192,13 +192,11 @@ if __name__ == "__main__":
         calib_path = DATA_FOLDER / Path('calib_jpg_u')
         title = title.format('High')
 
-    camera_1 = Calibrate(calib_path, 'C0', None)
     print(title)
-    print("Camera_1:")
+    camera_1 = Camera(calib_path, 'C0', None)
     print(camera_1)
 
-    camera_2 = Calibrate(calib_path, 'C1', None)
-    print("Camera_2:")
+    camera_2 = Camera(calib_path, 'C1', None)
     print(camera_2)
     print()
 

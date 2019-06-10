@@ -24,10 +24,11 @@ DATA_FOLDER = Path.cwd() / Path("data")
 class Calibrate:
     def __init__(self, directory, imprefix: str, shape=(6, 8), length=2.8):
         glob = "*" + imprefix + "*."
+        self.pickle = Path('calibration_' + imprefix + '.pickle')
         self.imprefix = imprefix
         if directory == None:
             self.path = DATA_FOLDER / Path('calib_jpg_u')
-            pickle_file = self.path / Path('calibration.pickle')
+            pickle_file = self.path / self.pickle
             if pickle_file.exists():
                 self.get_pickle(pickle_file)
             else:
@@ -37,7 +38,7 @@ class Calibrate:
         else:
             if isinstance(directory, list):
                 self.path = Path.cwd()
-                pickle_file = self.path / Path('calibration.pickle')
+                pickle_file = self.path / self.pickle
                 if pickle_file.exists():
                     self.get_pickle(pickle_file)
                 else:
@@ -45,7 +46,7 @@ class Calibrate:
                     self.__search_chess(shape, length)
             else:
                 self.path = Path(directory)
-                pickle_file = self.path / Path('calibration.pickle')
+                pickle_file = self.path / self.pickle
                 if pickle_file.exists():
                     self.get_pickle(pickle_file)
                 else:
@@ -55,7 +56,7 @@ class Calibrate:
         self.write_pickle()
 
     def __search_chess(self, shape, length):
-        resultfile = self.path / Path('calibration.pickle')
+        resultfile = self.path / self.pickle
 
         # checkerboard coordinates in 3D
         objp = np.zeros((shape[0] * shape[1], 3), np.float32)  # NxM crosses (points) on the checkerboard
@@ -121,7 +122,7 @@ class Calibrate:
         Saves the calibrated values onto a pickle file. The file is located in the directory where
         the calibration images are stored.
         """
-        file = self.path / Path('calibration_' + self.imprefix)
+        file = self.path / self.pickle
         with open(file, 'wb') as w:
             calib = dict(self)
             pickle.dump(calib, w)
