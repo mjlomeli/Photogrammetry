@@ -18,7 +18,7 @@ __email__ = "mjlomeli@uci.edu"
 __status__ = "Prototype"
 
 CALIB_PATH = Path.cwd() / Path("data")
-IMAGES_PATH = Path.cwd() /Path("data")
+IMAGES_PATH = Path.cwd() / Path("data")
 
 def main():
     calibrate = Calibrate(CALIB_PATH)
@@ -42,7 +42,13 @@ def find_rmv_files(directory: Path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
+    """
+    Runs the program:
+        python main.py [-r] [-f]
+    -r: Erases the previous calibrations and calculations.
+    -f: Runs a lower resolution of the images for faster debugging.
+    """
+    if len(sys.argv) > 1:
         if '-r' in sys.argv:
             find_rmv_files(Path.cwd() / Path('data'))
         if '-f' in sys.argv:

@@ -6,6 +6,7 @@ If the description is long, the first line should be a short summary
 that makes sense on its own, separated from the rest by a newline.
 """
 
+import sys
 import pickle
 import numpy as np
 import cv2
@@ -17,24 +18,18 @@ __maintainer__ = "Mauricio Lomeli"
 __email__ = "mjlomeli@uci.edu"
 __status__ = "Prototype"
 
-images_folder = Path.cwd() / Path("data") / Path("calib_jpg_u")
+DATA_FOLDER = Path.cwd() / Path("data")
 
 
 class Calibrate:
     def __init__(self, images=None, shape=(6, 8), length=2.8):
         if images == None:
-            self.path = images_folder
-            pickle_file = images_folder / Path('calibration.pickle')
+            self.path = DATA_FOLDER / Path('calib_jpg_u')
+            pickle_file = self.path / Path('calibration.pickle')
             if pickle_file.exists():
-                with open(pickle_file, 'rb') as f:
-                    calib = pickle.load(f)
-                    self.fx = calib['fx']
-                    self.fy = calib['fy']
-                    self.cx = calib['cx']
-                    self.cy = calib['cy']
-                    self.dist = calib['dist']
+                self.get_pickle(pickle_file)
             else:
-                self.cam_calibfiles = list(images_folder.glob("*.jpg"))
+                self.cam_calibfiles = list(self.path.glob("*.jpg"))
                 self.cam_calibfiles += list(self.path.glob("*.png"))
                 self.__search_chess(shape, length)
         else:
@@ -42,13 +37,7 @@ class Calibrate:
                 self.path = Path.cwd()
                 pickle_file = self.path / Path('calibration.pickle')
                 if pickle_file.exists():
-                    with open(pickle_file, 'rb') as f:
-                        calib = pickle.load(f)
-                        self.fx = calib['fx']
-                        self.fy = calib['fy']
-                        self.cx = calib['cx']
-                        self.cy = calib['cy']
-                        self.dist = calib['dist']
+                    self.get_pickle(pickle_file)
                 else:
                     self.cam_calibfiles = images
                     self.__search_chess(shape, length)
@@ -56,13 +45,7 @@ class Calibrate:
                 self.path = Path(images)
                 pickle_file = self.path / Path('calibration.pickle')
                 if pickle_file.exists():
-                    with open(pickle_file, 'rb') as f:
-                        calib = pickle.load(f)
-                        self.fx = calib['fx']
-                        self.fy = calib['fy']
-                        self.cx = calib['cx']
-                        self.cy = calib['cy']
-                        self.dist = calib['dist']
+                    self.get_pickle(pickle_file)
                 else:
                     self.cam_calibfiles = list(self.path.glob("*.jpg"))
                     self.cam_calibfiles += list(self.path.glob("*.png"))
@@ -82,7 +65,8 @@ class Calibrate:
         # Make a list of calibration images
         count = 0
         end = len(self.cam_calibfiles) + 1
-        printProgressBar(count, end, prefix='Calibrating', suffix='{}/{} files calibrated.'.format(count, end))
+        img_size = None
+        printProgressBar(count, end, prefix='Calibrating', suffix='{}/{} files calibrated. '.format(count, end))
         for idx, fname in enumerate(self.cam_calibfiles):
             img = cv2.imread(str(fname))
             img_size = (img.shape[1], img.shape[0])
@@ -101,8 +85,8 @@ class Calibrate:
                 cv2.imshow('img', img)
                 cv2.waitKey(500)
             count += 1
-            printProgressBar(count, end, prefix='Calibrating', suffix='{}/{} files calibrated.'.format(count, end))
-        printProgressBar(count, end, prefix='Calibrating', suffix='Writing to pickle')
+            printProgressBar(count, end, prefix='Calibrating', suffix='{}/{} files calibrated. '.format(count, end))
+        printProgressBar(count, end, prefix='Calibrating', suffix='Saving file.            ')
         cv2.destroyAllWindows()
 
         ret, K, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_size, None, None)
@@ -115,7 +99,22 @@ class Calibrate:
             calib = dict(self)
             pickle.dump(calib, w)
             count += 1
-        printProgressBar(count, end, prefix='Calibrating', suffix='Finished calibrating.')
+        printProgressBar(count, end, prefix='Calibrating', suffix='Finished calibrating. ')
+
+    def get_pickle(self, path: Path):
+        """
+        Saves the calibrated values onto a pickle file. The file is located in the directory where
+        the calibration images are stored.
+        :param path: The directory of the checkerboard images.
+        """
+        if path.exists():
+            with open(path, 'rb') as f:
+                calib = pickle.load(f)
+                self.fx = calib['fx']
+                self.fy = calib['fy']
+                self.cx = calib['cx']
+                self.cy = calib['cy']
+                self.dist = calib['dist']
 
     def __iter__(self):
         keys = ['fx', 'fy', 'cx', 'cy', 'dist']
@@ -154,3 +153,43 @@ def printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=
         # Print New Line on Complete
         if iteration == total:
             print()
+
+
+def find_rmv_files(directory: Path):
+    """
+    Removes all calibration files in the data folders.
+    :param directory: Path of the data folder.
+    """
+    calibration_file = directory / Path('calibration.pickle')
+
+    if calibration_file.exists():
+        calibration_file.unlink()
+
+    for path in directory.iterdir():
+        if path.is_dir():
+            find_rmv_files(path)
+
+
+if __name__ == "__main__":
+    """
+    Runs the program:
+        python calibrate.py [-r] [-f]
+    -r: Erases the previous calibrations.
+    -f: Runs a lower resolution of the calibration for faster debugging.
+    """
+    calib_path = None
+    title = "Calibration of {} Resolution"
+    if len(sys.argv) > 1:
+        if '-r' in sys.argv:
+            find_rmv_files(DATA_FOLDER)
+        if '-f' in sys.argv:
+            calib_path = DATA_FOLDER / Path('calib_png_small')
+            title = title.format('Low')
+    else:
+        calib_path = DATA_FOLDER / Path('calib_jpg_u')
+        title = title.format('High')
+
+    calibrate = Calibrate(calib_path)
+    print(title)
+    print(calibrate)
+    print()

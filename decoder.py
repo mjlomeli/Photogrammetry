@@ -31,12 +31,11 @@ class Decoder:
         :param camL: Camera, left camera object
         :param camR: Camera, right camera object
         """
-        pts2L, pts2R, pts3 = self.reconstruct(imprefixL, imprefixR, threshold, camL, camR)
-
-        self.pts3 = pts3
-        self.pts2R = pts2R
-        self.pts2L = pts2L
+        self.keys = ['trianglesL', 'trianglesR', 'simpL', 'simpR', 'pts2L', 'pts2R']
+        self.pts2L, self.pts2R, self.pts3 = self.reconstruct(imprefixL, imprefixR, threshold, camL, camR)
         self.mesh_clean()
+
+        self.__index = 0
 
     def decode(self, imprefix: str, start: int, threshold: int):
         """
@@ -250,6 +249,8 @@ class Decoder:
         self.trianglesR = trianglesR[edge3R]
         self.simpL = simpL[edge3L]
         self.simpR = simpR[edge3R]
+        self.pts2L = pts2L
+        self.pts2R = pts2R
 
     def plot(self):
         fig = plt.figure()
@@ -289,32 +290,22 @@ class Decoder:
         pass
 
     def __str__(self):
-        # TODO: print the table, etc.
-        pass
-
-    def __getitem__(self, item):
-        # TODO: gets the value of a point (ie color, pos, etc)
-        pass
-
-    def __setitem__(self, key, value):
-        # Todo: sets the value of a point (ie color, pos, etc)
-        pass
+        calib = "{\n"
+        for key in self.keys:
+            calib += "\t" + key + ":\t" + str(eval('self.' + key)) + ",\n"
+        calib += "}"
+        return calib
 
     def __iter__(self):
-        # Todo: get it to be iterable through all the points
-        pass
+        for key in self.keys:
+            yield (key, eval('self.' + key))
 
     def __next__(self):
-        # Todo: helps to start indexing in iterator i think
-        pass
-
-    def __copy__(self):
-        # Todo: prevent shallow copies in case copies are required later
-        pass
-
-
-
-
+        if self.__index >= len(self.keys):
+            raise StopIteration
+        item = self.keys[self.__index]
+        self.__index += 1
+        return item
 
 
 def makerotation(rx, ry, rz):
