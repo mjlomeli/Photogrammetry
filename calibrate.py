@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-"""
-Should be the docstring with a description of calibrate.
+"""Calibration Intrinsic
 
-If the description is long, the first line should be a short summary
-that makes sense on its own, separated from the rest by a newline.
+Calculates the intrinsic values, like focal length, offsets, and distance, of an image
+with a checkerboard.
 """
 
 import sys
@@ -13,6 +12,7 @@ import cv2
 from pathlib import Path
 
 __authors__ = ["Mauricio Lomeli", "Charless Fowlkes"]
+__credits__ = ["Benjamin Cordier"]
 __date__ = "6/10/2019"
 __maintainer__ = "Mauricio Lomeli"
 __email__ = "mjlomeli@uci.edu"
@@ -22,34 +22,37 @@ DATA_FOLDER = Path.cwd() / Path("data")
 
 
 class Calibrate:
-    def __init__(self, images=None, shape=(6, 8), length=2.8):
-        if images == None:
+    def __init__(self, directory, imprefix: str, shape=(6, 8), length=2.8):
+        glob = "*" + imprefix + "*."
+        self.imprefix = imprefix
+        if directory == None:
             self.path = DATA_FOLDER / Path('calib_jpg_u')
             pickle_file = self.path / Path('calibration.pickle')
             if pickle_file.exists():
                 self.get_pickle(pickle_file)
             else:
-                self.cam_calibfiles = list(self.path.glob("*.jpg"))
-                self.cam_calibfiles += list(self.path.glob("*.png"))
+                self.cam_calibfiles = list(self.path.glob(glob + "jpg"))
+                self.cam_calibfiles += list(self.path.glob(glob + "png"))
                 self.__search_chess(shape, length)
         else:
-            if isinstance(images, list):
+            if isinstance(directory, list):
                 self.path = Path.cwd()
                 pickle_file = self.path / Path('calibration.pickle')
                 if pickle_file.exists():
                     self.get_pickle(pickle_file)
                 else:
-                    self.cam_calibfiles = images
+                    self.cam_calibfiles = directory
                     self.__search_chess(shape, length)
             else:
-                self.path = Path(images)
+                self.path = Path(directory)
                 pickle_file = self.path / Path('calibration.pickle')
                 if pickle_file.exists():
                     self.get_pickle(pickle_file)
                 else:
-                    self.cam_calibfiles = list(self.path.glob("*.jpg"))
-                    self.cam_calibfiles += list(self.path.glob("*.png"))
+                    self.cam_calibfiles = list(self.path.glob(glob + "jpg"))
+                    self.cam_calibfiles += list(self.path.glob(glob + "png"))
                     self.__search_chess(shape, length)
+        self.write_pickle()
 
     def __search_chess(self, shape, length):
         resultfile = self.path / Path('calibration.pickle')
@@ -95,15 +98,12 @@ class Calibrate:
         self.cx = K[0][2]
         self.cy = K[1][2]
         self.dist = dist
-        with open(resultfile, 'wb') as w:
-            calib = dict(self)
-            pickle.dump(calib, w)
-            count += 1
+        count += 1
         printProgressBar(count, end, prefix='Calibrating', suffix='Finished calibrating. ')
 
     def get_pickle(self, path: Path):
         """
-        Saves the calibrated values onto a pickle file. The file is located in the directory where
+        Gets the calibrated values onto a pickle file. The file is located in the directory where
         the calibration images are stored.
         :param path: The directory of the checkerboard images.
         """
@@ -115,6 +115,16 @@ class Calibrate:
                 self.cx = calib['cx']
                 self.cy = calib['cy']
                 self.dist = calib['dist']
+
+    def write_pickle(self):
+        """
+        Saves the calibrated values onto a pickle file. The file is located in the directory where
+        the calibration images are stored.
+        """
+        file = self.path / Path('calibration_' + self.imprefix)
+        with open(file, 'wb') as w:
+            calib = dict(self)
+            pickle.dump(calib, w)
 
     def __iter__(self):
         keys = ['fx', 'fy', 'cx', 'cy', 'dist']
@@ -189,7 +199,12 @@ if __name__ == "__main__":
         calib_path = DATA_FOLDER / Path('calib_jpg_u')
         title = title.format('High')
 
-    calibrate = Calibrate(calib_path)
+    calibrate_1 = Calibrate(calib_path, 'C0')
     print(title)
-    print(calibrate)
+    print("calibrate_1:")
+    print(calibrate_1)
+
+    calibrate_2 = Calibrate(calib_path, 'C1')
+    print("calibrate_2:")
+    print(calibrate_2)
     print()

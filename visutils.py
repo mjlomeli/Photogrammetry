@@ -1,8 +1,22 @@
+#!/usr/bin/env python
+"""
+Should be the docstring with a description of visutils.
+
+If the description is long, the first line should be a short summary
+that makes sense on its own, separated from the rest by a newline.
+"""
+
 import numpy as np
 import camutils
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.mplot3d import Axes3D
+
+__authors__ = ["Mauricio Lomeli", "Charless Fowlkes"]
+__date__ = "6/10/2019"
+__maintainer__ = "Mauricio Lomeli"
+__email__ = "mjlomeli@uci.edu"
+__status__ = "Prototype"
 
 username = 'mjlomeli'
 key = 'BY7shgwcOm0WSTKikJzC'

@@ -5,14 +5,15 @@ A pixel in each camera image is decoded by looking at the sequence of black and 
 Images are encoded into binary and translated to graycode, then decoded into decimal.
 """
 
+import sys
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial import Delaunay
-from scipy.optimize import leastsq
+import pickle
 from pathlib import Path
 
 
-MODELS = Path.cwd() / Path("models")
+DATA_FOLDER = Path.cwd() / Path("data")
 
 __authors__ = ["Mauricio Lomeli", "Charless Fowlkes"]
 __credits__ = ["Benjamin Cordier"]
@@ -23,19 +24,69 @@ __status__ = "Prototype"
 
 
 class Decoder:
-    def __init__(self, imprefixL: str, imprefixR: str, threshold: int, camL, camR):
+    def __init__(self, imprefixL: str, imprefixR: str, threshold: int, camL, camR, path: Path):
         """
+        :param path: Path, where the raw images are located
         :param imprefixL: string, left camera folder prefix
         :param imprefixR: string, right camera folder prefix
         :param threshold: int, the threshold
         :param camL: Camera, left camera object
         :param camR: Camera, right camera object
         """
-        self.keys = ['trianglesL', 'trianglesR', 'simpL', 'simpR', 'pts2L', 'pts2R']
-        self.pts2L, self.pts2R, self.pts3 = self.reconstruct(imprefixL, imprefixR, threshold, camL, camR)
-        self.mesh_clean()
-
+        self.keys = ['trianglesL', 'trianglesR', 'simpL', 'simpR', 'pts2L', 'pts2R', 'pts3', 'camL', 'camR']
         self.__index = 0
+        self.path = path
+        self.camL = camL
+        self.camR = camR
+
+        if path.exists() and path.is_dir():
+            pickle_file = path / Path('intrinsics.pickle')
+            if pickle_file.exists():
+                self.get_pickle()
+        else:
+            prefixR = str(path) + imprefixR
+            prefixL = str(path) + imprefixL
+            self.pts2L, self.pts2R, self.pts3 = self.reconstruct(prefixL, prefixR, threshold, camL, camR)
+            self.mesh_clean()
+            self.write_pickle()
+
+    def get_pickle(self):
+        """
+        Loads the decoded values from a pickle file. The file is located in the directory where
+        the raw images are stored.
+        """
+        if self.path.exists():
+            with open(self.path, 'rb') as f:
+                intrinsics = pickle.load(f)
+                self.pts2L = intrinsics['pts2L']
+                self.pts2R = intrinsics['pts2R']
+                self.pts3 = intrinsics['pts3']
+                self.trianglesL = intrinsics['trianglesL']
+                self.trianglesR = intrinsics['trianglesR']
+                self.simpL = intrinsics['simpL']
+                self.simpR = intrinsics['simpR']
+                self.camL = intrinsics['camL']
+                self.camR = intrinsics['camR']
+
+
+    def write_pickle(self):
+        """
+        Saves the decoded values onto a pickle file. The file is located in the directory where
+        the raw images are stored.
+        """
+        if self.path.exists():
+            with open(self.path, 'wb') as f:
+                intrinsics = {}
+                intrinsics['pts2L'] = self.pts2L
+                intrinsics['pts2R'] = self.pts2R
+                intrinsics['pts3']= self.pts3
+                intrinsics['trianglesL'] = self.trianglesL
+                intrinsics['trianglesR'] = self.trianglesR
+                intrinsics['simpL'] = self.simpL
+                intrinsics['simpR'] = self.simpR
+                intrinsics['camL'] = self.camL
+                intrinsics['camR'] = self.camR
+                pickle.dump(intrinsics, f)
 
     def decode(self, imprefix: str, start: int, threshold: int):
         """
@@ -252,35 +303,6 @@ class Decoder:
         self.pts2L = pts2L
         self.pts2R = pts2R
 
-    def plot(self):
-        fig = plt.figure()
-        x, y, z = self.pts3
-        ax = fig.gca(projection="3d")
-        ax.plot_trisurf(x, y, z, triangles=self.simpL, cmap=plt.cm.Spectral)
-        ax.view_init(azim=0)
-        plt.show()
-
-        fig = plt.figure()
-        x, y, z = self.pts3
-        ax = fig.gca(projection="3d")
-        ax.plot_trisurf(x, y, z, triangles=self.simpL, cmap=plt.cm.Spectral)
-        ax.view_init(azim=300)
-        plt.show()
-
-        fig = plt.figure()
-        x, y, z = self.pts3
-        ax = fig.gca(projection="3d")
-        ax.plot_trisurf(x, y, z, triangles=self.simpR, cmap=plt.cm.Spectral)
-        ax.view_init(azim=0)
-        plt.show()
-
-        fig = plt.figure()
-        x, y, z = self.pts3
-        ax = fig.gca(projection="3d")
-        ax.plot_trisurf(x, y, z, triangles=self.simpR, cmap=plt.cm.Spectral)
-        ax.view_init(azim=300)
-        plt.show()
-
     def __add__(self, other):
         # TODO: add other decoders so that they mesh together
         pass
@@ -306,97 +328,6 @@ class Decoder:
         item = self.keys[self.__index]
         self.__index += 1
         return item
-
-
-def makerotation(rx, ry, rz):
-    """
-    Generate a rotation matrix
-
-    Parameters
-    ----------
-    rx,ry,rz : floats
-        Amount to rotate around x, y and z axes in degrees
-
-    Returns
-    -------
-    R : 2D numpy.array (dtype=float)
-        Rotation matrix of shape (3,3)
-    """
-    rx = np.pi * rx / 180.0
-    ry = np.pi * ry / 180.0
-    rz = np.pi * rz / 180.0
-
-    Rx = np.array([[1, 0, 0], [0, np.cos(rx), -np.sin(rx)], [0, np.sin(rx), np.cos(rx)]])
-    Ry = np.array([[np.cos(ry), 0, -np.sin(ry)], [0, 1, 0], [np.sin(ry), 0, np.cos(ry)]])
-    Rz = np.array([[np.cos(rz), -np.sin(rz), 0], [np.sin(rz), np.cos(rz), 0], [0, 0, 1]])
-    R = (Rz @ Ry @ Rx)
-
-    return R
-
-
-class Camera:
-    """
-    A simple data structure describing camera parameters
-
-    The parameters describing the camera
-    cam.f : float   --- camera focal length (in units of pixels)
-    cam.c : 2x1 vector  --- offset of principle point
-    cam.R : 3x3 matrix --- camera rotation
-    cam.t : 3x1 vector --- camera translation
-    """
-
-    def __init__(self, f, c, R, t):
-        self.f = f
-        self.c = c
-        self.R = R
-        self.t = t
-
-    def __str__(self):
-        return f'Camera : \n f={self.f} \n c={self.c.T} \n R={self.R} \n t = {self.t.T}'
-
-    def project(self, pts3):
-        """
-        Project the given 3D points in world coordinates into the specified camera
-
-        Parameters
-        ----------
-        pts3 : 2D numpy.array (dtype=float)
-            Coordinates of N points stored in a array of shape (3,N)
-
-        Returns
-        -------
-        pts2 : 2D numpy.array (dtype=float)
-            Image coordinates of N points stored in an array of shape (2,N)
-        """
-        assert (pts3.shape[0] == 3)
-
-        # get point location relative to camera
-        pcam = self.R.transpose() @ (pts3 - self.t)
-
-        # project
-        p = self.f * (pcam / pcam[2, :])
-
-        # offset principal point
-        pts2 = p[0:2, :] + self.c
-
-        assert (pts2.shape[1] == pts3.shape[1])
-        assert (pts2.shape[0] == 2)
-
-        return pts2
-
-    def update_extrinsics(self, params):
-        """
-        Given a vector of extrinsic parameters, update the camera
-        to use the provided parameters.
-
-        Parameters
-        ----------
-        params : 1D numpy.array (dtype=float)
-            Camera parameters we are optimizing over stored in a vector
-            params[0:2] are the rotation angles, params[2:5] are the translation
-        """
-        self.R = makerotation(params[0], params[1], params[2])
-        self.t = np.array([[params[3]], [params[4]], [params[5]]])
 
 
 def triangulate(pts2L, camL, pts2R, camR):
@@ -453,64 +384,6 @@ def triangulate(pts2L, camL, pts2R, camR):
     return pts3
 
 
-def residuals(pts3, pts2, cam, params):
-    """
-    Compute the difference between the projection of 3D points by the camera
-    with the given parameters and the observed 2D locations
-
-    Parameters
-    ----------
-    pts3 : 2D numpy.array (dtype=float)
-        Coordinates of N points stored in a array of shape (3,N)
-
-    pts2 : 2D numpy.array (dtype=float)
-        Coordinates of N points stored in a array of shape (2,N)
-
-    params : 1D numpy.array (dtype=float)
-        Camera parameters we are optimizing over stored in a vector
-
-    Returns
-    -------
-    residual : 1D numpy.array (dtype=float)
-        Vector of residual 2D projection errors of size 2*N
-    """
-
-    cam.update_extrinsics(params)
-    residual = pts2 - cam.project(pts3)
-
-    return residual.flatten()
-
-
-def calibratePose(pts3, pts2, cam_init, params_init):
-    """
-    Calibrate the provided camera by updating R,t so that pts3 projects
-    as close as possible to pts2
-
-    Parameters
-    ----------
-    pts3 : 2D numpy.array (dtype=float)
-        Coordinates of N points stored in a array of shape (3,N)
-
-    pts2 : 2D numpy.array (dtype=float)
-        Coordinates of N points stored in a array of shape (2,N)
-
-    cam : Camera
-        Initial estimate of camera
-
-    Returns
-    -------
-    cam_opt : Camera
-        Refined estimate of camera with updated R,t parameters
-    """
-
-    # define our error function
-    efun = lambda params: residuals(pts3, pts2, cam_init, params)
-    popt, _ = leastsq(efun, params_init)
-    cam_init.update_extrinsics(popt)
-
-    return cam_init
-
-
 def __printProgressBar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█'):
     """ 
     Displays a progress bar for each test.
@@ -531,3 +404,43 @@ def __printProgressBar(iteration, total, prefix='', suffix='', decimals=1, lengt
         # Print New Line on Complete
         if iteration == total:
             print()
+
+
+def find_rmv_files(directory: Path):
+    """
+    Removes all intrinsic files in the data folders.
+    :param directory: Path of the data folder.
+    """
+    intrinsic_file = directory / Path('intrinsic.pickle')
+
+    if intrinsic_file.exists():
+        intrinsic_file.unlink()
+
+    for path in directory.iterdir():
+        if path.is_dir():
+            find_rmv_files(path)
+
+
+if __name__ == "__main__":
+    """
+    Runs the program:
+        python decoder.py [-r] [-f]
+    -r: Erases the previous intrinsics.
+    -f: Runs a lower resolution of the images for faster calculations (for debugging).
+    """
+    intrinsic_path = None
+    title = "Decoder of {} Resolution"
+    if len(sys.argv) > 1:
+        if '-r' in sys.argv:
+            find_rmv_files(DATA_FOLDER)
+        if '-f' in sys.argv:
+            intrinsic_path = DATA_FOLDER / Path('teapot_small')
+            title = title.format('Low')
+    else:
+        intrinsic_path = DATA_FOLDER / Path('teapot')
+        title = title.format('High')
+
+    decoder = Decoder(intrinsic_path)
+    print(title)
+    print(decoder)
+    print()
