@@ -82,7 +82,7 @@ class Calibrate:
         # Make a list of calibration images
         count = 0
         end = len(self.cam_calibfiles) + 1
-        printProgressBar(count, end, suffix='calibrating {}/{} files'.format(count, end))
+        printProgressBar(count, end, prefix='Calibrating', suffix='{}/{} files'.format(count, end))
         for idx, fname in enumerate(self.cam_calibfiles):
             img = cv2.imread(str(fname))
             img_size = (img.shape[1], img.shape[0])
@@ -101,8 +101,8 @@ class Calibrate:
                 cv2.imshow('img', img)
                 cv2.waitKey(500)
             count += 1
-            printProgressBar(count, end, suffix='calibrating {}/{} files'.format(count, end))
-        printProgressBar(count, end, suffix='Writing to pickle')
+            printProgressBar(count, end, prefix='Calibrating', suffix='{}/{} files'.format(count, end))
+        printProgressBar(count, end, prefix='Calibrating', suffix='Writing to pickle')
         cv2.destroyAllWindows()
 
         ret, K, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_size, None, None)
@@ -115,7 +115,7 @@ class Calibrate:
             calib = dict(self)
             pickle.dump(calib, w)
             count += 1
-        printProgressBar(count, end, suffix='Writing to pickle.')
+        printProgressBar(count, end, prefix='Calibrating', suffix='Finished calibrating.')
 
     def __iter__(self):
         keys = ['fx', 'fy', 'cx', 'cy', 'dist']
