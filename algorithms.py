@@ -1,7 +1,26 @@
+# !/usr/bin/env python
 
+"""Algorithms
+
+If the description is long, the first line should be a short summary of algorithms.py
+that makes sense on its own, separated from the rest by a newline.
+"""
+
+from pathlib import Path
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
+
+DATA_FOLDER = Path.cwd() / Path('data')
+
+__author__ = "Mauricio Lomeli"
+__date__ = "6/13/2019"
+__maintainer__ = "Mauricio Lomeli"
+__email__ = "mjlomeli@uci.edu"
+__status__ = "Prototype"
+
+# TODO: write your code here
+
 
 img1 = cv2.imread('box.png',0)          # queryImage
 img2 = cv2.imread('box_in_scene.png',0) # trainImage
@@ -80,51 +99,3 @@ print( "result:  {}\n".format(results) )
 print( "neighbours:  {}\n".format(neighbours) )
 print( "distance:  {}\n".format(dist) )
 plt.show()
-
-
-
-####################################
-import PhotoScan
-import math
-
-doc = PhotoScan.app.document
-chunk = doc.chunk
-
-# Detect markers
-chunk.detectMarkers(type=PhotoScan.CircularTarget12bit)
-
-# Load reference
-chunk.loadReference(path='markers.txt', format=PhotoScan.ReferenceFormatCSV, columns='nxyzXYZ', delimiter=',')
-
-# Align images
-chunk.matchPhotos(accuracy=PhotoScan.HighAccuracy)
-chunk.alignCameras(adaptive_fitting=False)
-
-# Rotate ROI to coordinate system: Bounding_Box_to_Coordinate_System.py
-
-#rotates chunks' bounding box in accordance of coordinate system for active chunk
-#bounding box size is kept
-#compatibility: Agisoft PhotoScan Professional 1.1.0
-
-T = chunk.transform.matrix
-
-v_t = T * PhotoScan.Vector( [0,0,0,1] )
-v_t.size = 3
-
-if chunk.crs:
-	m = chunk.crs.localframe(v_t)
-else:
-	m = PhotoScan.Matrix().diag([1,1,1,1])
-
-m = m * T
-
-s = math.sqrt(m[0,0] ** 2 + m[0,1] ** 2 + m[0,2] ** 2) #scale factor
-
-R = PhotoScan.Matrix( [[m[0,0],m[0,1],m[0,2]], [m[1,0],m[1,1],m[1,2]], [m[2,0],m[2,1],m[2,2]]])
-
-R = R * (1. / s)
-
-reg = chunk.region
-reg.rot = R.t()
-chunk.region = reg
-#END: Bounding_Box_to_Coordinate_System.py

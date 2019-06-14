@@ -12,6 +12,8 @@ from scipy.spatial import Delaunay
 import pickle
 from pathlib import Path
 from camera import Camera
+import visutils
+from mayavi.mlab import *
 
 
 DATA_FOLDER = Path.cwd() / Path("data")
@@ -25,7 +27,7 @@ __status__ = "Prototype"
 
 
 class Decoder:
-    def __init__(self, imprefixL: str, imprefixR: str, threshold: int, camL, camR, path: Path):
+    def __init__(self, imprefixL='', imprefixR='', threshold=0.02, camL=None, camR=None, path=DATA_FOLDER, testing=False):
         """
         :param path: Path, where the raw images are located
         :param imprefixL: string, left camera folder prefix
@@ -34,62 +36,62 @@ class Decoder:
         :param camL: Camera, left camera object
         :param camR: Camera, right camera object
         """
-        self.keys = ['trianglesL', 'trianglesR', 'simpL', 'simpR', 'pts2L', 'pts2R', 'pts3', 'camL', 'camR']
-        self.__index = 0
-        self.path = path
-        self.camL = camL
-        self.camR = camR
-        self.imprefixL = imprefixL
-        self.imprefixR = imprefixR
-
-        if path.exists() and path.is_dir():
-            pickle_file = path / Path('intrinsics.pickle')
-            if pickle_file.exists():
+        self.testing = testing
+        if not testing:
+            self.keys = ['trianglesL', 'trianglesR', 'simpL', 'simpR', 'pts2L', 'pts2R', 'pts3', 'camL', 'camR']
+            self.__index = 0
+            self.path = path
+            self.camL = camL
+            self.camR = camR
+            self.pickle_file = path / Path('intrinsics.pickle')
+            self.mask_C0, self.mask_C1 = self.get_mask(0.1)
+            if self.pickle_file.exists():
                 self.get_pickle()
-        else:
-            prefixR = str(path) + imprefixR
-            prefixL = str(path) + imprefixL
-            self.pts2L, self.pts2R, self.pts3 = self.reconstruct(prefixL, prefixR, threshold, camL, camR)
-            self.mesh_clean()
-            self.write_pickle()
+            else:
+                prefixL = str(path / Path('frame_' + imprefixL + '_'))
+                prefixR = str(path / Path('frame_' + imprefixR + '_'))
+                self.pts2L, self.pts2R, self.pts3 = self.reconstruct(prefixL, prefixR, threshold, camL, camR)
+                self.mesh_clean()
+                self.write_pickle()
+
+    def get_mask(self, threshold):
+        """
+        To apply the mask, multiply the mask to the image
+        :param threshold: amount difference to allow in the image
+        :return: tuple, numpy array (N,M) masks of boolean values
+        """
+        background_C0 = plt.imread(str(self.path / Path('color_C0_00.png')))
+        background_C1 = plt.imread(str(self.path / Path('color_C1_00.png')))
+        foreground_C0 = plt.imread(str(self.path / Path('color_C0_01.png')))
+        foreground_C1 = plt.imread(str(self.path / Path('color_C1_01.png')))
+
+        mask_C0 = (np.sum(np.abs(foreground_C0 - background_C0), axis=2) > threshold).astype(bool)
+        mask_C1 = (np.sum(np.abs(foreground_C1 - background_C1), axis=2) > threshold).astype(bool)
+
+        return mask_C0, mask_C1
 
     def get_pickle(self):
         """
         Loads the decoded values from a pickle file. The file is located in the directory where
         the raw images are stored.
         """
-        if self.path.exists():
-            with open(self.path, 'rb') as f:
-                intrinsics = pickle.load(f)
-                self.pts2L = intrinsics['pts2L']
-                self.pts2R = intrinsics['pts2R']
-                self.pts3 = intrinsics['pts3']
-                self.trianglesL = intrinsics['trianglesL']
-                self.trianglesR = intrinsics['trianglesR']
-                self.simpL = intrinsics['simpL']
-                self.simpR = intrinsics['simpR']
-                self.camL = intrinsics['camL']
-                self.camR = intrinsics['camR']
-
+        with open(self.pickle_file, 'rb') as f:
+            intrinsics = pickle.load(f)
+            self.pts2L = intrinsics.pts2L
+            self.pts2R = intrinsics.pts2R
+            self.pts3 = intrinsics.pts3
+            self.camL = intrinsics.camL
+            self.camR = intrinsics.camR
+            self.simp = intrinsics.simp
+            self.triangles = intrinsics.triangles
 
     def write_pickle(self):
         """
         Saves the decoded values onto a pickle file. The file is located in the directory where
         the raw images are stored.
         """
-        if self.path.exists():
-            with open(self.path, 'wb') as f:
-                intrinsics = {}
-                intrinsics['pts2L'] = self.pts2L
-                intrinsics['pts2R'] = self.pts2R
-                intrinsics['pts3']= self.pts3
-                intrinsics['trianglesL'] = self.trianglesL
-                intrinsics['trianglesR'] = self.trianglesR
-                intrinsics['simpL'] = self.simpL
-                intrinsics['simpR'] = self.simpR
-                intrinsics['camL'] = self.camL
-                intrinsics['camR'] = self.camR
-                pickle.dump(intrinsics, f)
+        with open(self.pickle_file, 'wb') as f:
+            pickle.dump(self, f)
 
     def decode(self, imprefix: str, start: int, threshold: float):
         """
@@ -97,73 +99,57 @@ class Decoder:
         threshold.  We assume the images come in consective pairs
         with filenames of the form <prefix><start>.png - <prefix><start+20>.png
         (e.g. a start offset of 20 would yield image20.png, image01.png... image39.png)
-
-        Parameters
-        ----------
-        imprefix : str
-          prefix of where to find the images (assumed to be .png)
-
-        start : int
-          image offset.
-
-        threshold : float
-
-        Returns
-        -------
-        code : 2D numpy.array (dtype=float)
-
-        mask : 2D numpy.array (dtype=float)
+        :param imprefix: prefix of where to find the images
+        :param start: image offset.
+        :param threshold: decodability threshold
+        :return: code, mask : 2D numpy.array (dtype=float)
         """
+        images = None
         nbits = 10
-
-        imgs = list()
-        imgs_inv = list()
-
-        count, end = 0, len(range(nbits*3)) + len(range(1, nbits)) + 1  # total of iterations in entire function
-        printProgressBar(count, end, prefix='Averaging', suffix='{}/{} files decoded. '.format(count, end))
-        for i in range(start, start + 2 * nbits, 2):
-            # Todo: FileNotFoundError: [Errno 2] No such file or directory: 'C100.png'
-            fname0 = '%s%2.2d.png' % (imprefix, i)
-            fname1 = '%s%2.2d.png' % (imprefix, i + 1)
-            print('(', i, i + 1, ')', end='')
-            img = plt.imread(fname0)
-            img_inv = plt.imread(fname1)
-            if (img.dtype == np.uint8):
-                img = img.astype(float) / 256
-                img_inv = img_inv.astype(float) / 256
-            if (len(img.shape) > 2):
-                img = np.mean(img, axis=2)
-                img_inv = np.mean(img_inv, axis=2)
-            imgs.append(img)
-            imgs_inv.append(img_inv)
+        count = 0
+        file_count = 0
+        end = nbits * 3 + 1
+        printProgressBar(count, end, 'Decoding {}'.format(self.path.name),
+                         '{}/{} images found.'.format(file_count, nbits * 2))
+        for i in range(start, start + (2 * nbits)):
+            img = plt.imread(imprefix + '{:02d}.png'.format(i))
+            if len(img.shape) > 2:
+                img = np.average(img, axis=-1)
+            if 'frame_C0_' in imprefix:
+                img *= self.mask_C0
+            elif 'frame_C1_' in imprefix:
+                img *= self.mask_C1
+            if images is None:
+                images = np.array([img])
+            else:
+                images = np.append(images, [img], axis=0)
             count += 1
-            printProgressBar(count, end, prefix='Averaging', suffix='{}/{} files decoded. '.format(count, end))
+            file_count += 1
+            printProgressBar(count, end, 'Decoding {}'.format(self.path.name),
+                             '{}/{} Images found.'.format(file_count, nbits * 2))
+        bit = (images[::2] > images[1::2])
+        mask = np.all(np.abs(images[::2] - images[1::2]) > threshold, axis=0).astype(float)
 
-        (h, w) = imgs[0].shape
-        print('\n')
-
-        gcd = np.zeros((h, w, nbits))
-        mask = np.ones((h, w))
-        for i in range(nbits):
-            gcd[:, :, i] = imgs[i] > imgs_inv[i]
-            mask = mask * (np.abs(imgs[i] - imgs_inv[i]) > threshold)
+        # we will assume a 10 bit code
+        length = len(bit)
+        img = bit.copy()
+        deci = np.zeros(bit[0].shape)
+        file_count = 0
+        printProgressBar(count, end, 'Decoding {}'.format(self.path.name),
+                         '{}/{} Images decoded.'.format(file_count, nbits))
+        for i in range(length - 1):
+            img[i + 1] = np.bitwise_xor(img[i], img[i + 1])
+            deci += img[i] * (2 ** (length - 1 - i))
             count += 1
-            printProgressBar(count, end, prefix='Gray Code', suffix='{}/{} files decoded. '.format(count, end))
-
-        bcd = np.zeros((h, w, nbits))
-        bcd[:, :, 0] = gcd[:, :, 0]
-        for i in range(1, nbits):
-            bcd[:, :, i] = np.logical_xor(bcd[:, :, i - 1], gcd[:, :, i])
-            count += 1
-            printProgressBar(count, end, prefix='Binary', suffix='{}/{} files decoded. '.format(count, end))
-
-        code = np.zeros((h, w))
-        for i in range(nbits):
-            code = code + np.power(2, (nbits - i - 1)) * bcd[:, :, i]
-            count += 1
-            printProgressBar(count, end, prefix='Decimal', suffix='{}/{} files decoded. '.format(count, end))
-
-        printProgressBar(count+1, end, prefix='Decoding', suffix='Finished decoding. ')
+            file_count += 1
+            printProgressBar(count, end, 'Decoding {}'.format(self.path.name),
+                             '{}/{} Images decoded.'.format(file_count, nbits))
+        deci += img[length - 1]
+        code = deci.astype(float)
+        count += 1
+        file_count += 1
+        printProgressBar(count + 1, end, 'Decoding {}'.format(self.path.name),
+                         '{}/{} Finished decoding.'.format(file_count, nbits))
         return code, mask
 
     def reconstruct(self, imprefixL, imprefixR, threshold, camL, camR):
@@ -171,48 +157,40 @@ class Decoder:
         Simple reconstruction based on triangulating matched pairs of points
         between to view which have been encoded with a 20bit gray code.
 
-        Parameters
-        ----------
-        imprefix : str
-          prefix for where the images are stored
-
-        threshold : float
-          decodability threshold
-
-        camL,camR : Camera
-          camera parameters
-
-        Returns
-        -------
-        pts2L,pts2R : 2D numpy.array (dtype=float)
-
-        pts3 : 2D numpy.array (dtype=float)
+        :param imprefixL: prefix for where the images are stored for the left cam
+        :param imprefixR: prefix for where the immages are stored for the right cam
+        :param threshold: decodability threshold
+        :param camL: left camera parameters
+        :param camR: right camera parameters
+        :return: pts2L,pts2R, pts3 : 2D numpy.array (dtype=float)
         """
+        HL, HLmask = self.decode(imprefixL, 0, threshold)
+        VL, VLmask = self.decode(imprefixL, 20, threshold)
+        HR, HRmask = self.decode(imprefixR, 0, threshold)
+        VR, VRmask = self.decode(imprefixR, 20, threshold)
 
-        CLh, maskLh = self.decode(imprefixL, 0, threshold)
-        CLv, maskLv = self.decode(imprefixL, 20, threshold)
-        CRh, maskRh = self.decode(imprefixR, 0, threshold)
-        CRv, maskRv = self.decode(imprefixR, 20, threshold)
+        # Constructs the combined 20 bit code C = H + 1024 * V and mask for each view
+        CLmask = HL + 1024 * VL
+        CRmask = HR + 1024 * VR
+        maskL = HLmask * VLmask
+        maskR = HRmask * VRmask
 
-        CL = CLh + 1024 * CLv
-        maskL = maskLh * maskLv
-        CR = CRh + 1024 * CRv
-        maskR = maskRh * maskRv
+        h = CLmask.shape[0]
+        w = CLmask.shape[1]
 
-        h = CR.shape[0]
-        w = CR.shape[1]
+        # get positions of non-zero values
+        Rpos = np.nonzero(maskR.flatten())
+        Lpos = np.nonzero(maskL.flatten())
 
-        subR = np.nonzero(maskR.flatten())
-        subL = np.nonzero(maskL.flatten())
+        # Find the indices of pixels in the left and right code image that have matching codes
+        CR = CRmask.flatten()[Rpos]
+        CL = CLmask.flatten()[Lpos]
+        matchR = np.intersect1d(CR, CL, return_indices=True)[1].astype(int)
+        matchL = np.intersect1d(CR, CL, return_indices=True)[2].astype(int)
+        matchR = Rpos[0][matchR]
+        matchL = Lpos[0][matchL]
 
-        CRgood = CR.flatten()[subR]
-        CLgood = CL.flatten()[subL]
-
-        _, submatchR, submatchL = np.intersect1d(CRgood, CLgood, return_indices=True)
-
-        matchR = subR[0][submatchR]
-        matchL = subL[0][submatchL]
-
+        # Generates the corresponding pixel coordinates for the matched pixels.
         xx, yy = np.meshgrid(range(w), range(h))
         xx = np.reshape(xx, (-1, 1))
         yy = np.reshape(yy, (-1, 1))
@@ -220,103 +198,137 @@ class Decoder:
         pts2R = np.concatenate((xx[matchR].T, yy[matchR].T), axis=0)
         pts2L = np.concatenate((xx[matchL].T, yy[matchL].T), axis=0)
 
+        # triangulates the points
         pts3 = triangulate(pts2L, camL, pts2R, camR)
-
         return pts2L, pts2R, pts3
 
-    def mesh_clean(self):
-        # TODO: in the selection class, defining the box is placed here.
+    def mesh_clean(self, trithresh=200, boxlimits=np.array([-140, 350, -120, 180, -190, 100])):
+        """
+         Removes any triangles for which the longest edge of the triangle has a length greater than trithresh.
+        :param trithresh: int, Specify a longest allowed edge that can appear in the mesh.
+        :param boxlimits: numpy arr(1,6), specifies the limits along the x,y and z axis of a box containing the object
+        """
         # Mesh cleanup parameters
 
         # Specify limits along the x,y and z axis of a box containing the object
         # we will prune out triangulated points outside these limits
-        boxlimits = np.array([-140, 350, -120, 180, -190, 100])
 
         # Specify a longest allowed edge that can appear in the mesh. Remove triangles
         # from the final mesh that have edges longer than this value
-        trithresh = 900
+
         #
         # bounding box pruning
         #
-
-        prune_boxed_x = np.logical_and(self.pts3[0] > boxlimits[0], self.pts3[0] < boxlimits[1])
-        x_trimmed = self.pts3[:, prune_boxed_x]
-        pts2L = self.pts2L[:, prune_boxed_x]
-        pts2R = self.pts2R[:, prune_boxed_x]
-
-        prune_boxed_y = np.logical_and(x_trimmed[1] > boxlimits[0], x_trimmed[1] < boxlimits[3])
-        xy_trimmed = x_trimmed[:, prune_boxed_y]
-        pts2L = pts2L[:, prune_boxed_y]
-        pts2R = pts2R[:, prune_boxed_y]
-
-        prune_boxed_z = np.logical_and(xy_trimmed[2] > boxlimits[4], xy_trimmed[2] < boxlimits[5])
-        xyz_trimmed = xy_trimmed[:, prune_boxed_z]
-        pts2L = pts2L[:, prune_boxed_z]
-        pts2R = pts2R[:, prune_boxed_z]
-
-        xy_trim = np.bitwise_not(np.logical_and(xyz_trimmed[1] > 160, xyz_trimmed[0] > 218))
-        xyz_trimmed = xyz_trimmed[:, xy_trim]
-        pts2L = pts2L[:, xy_trim]
-        pts2R = pts2R[:, xy_trim]
-
-        xy_trim = np.bitwise_not(np.logical_and(xyz_trimmed[1] > 160, xyz_trimmed[0] < 60))
-        xyz_trimmed = xyz_trimmed[:, xy_trim]
-        pts2L = pts2L[:, xy_trim]
-        pts2R = pts2R[:, xy_trim]
-
-        yz_trim = np.bitwise_not(np.logical_and(xyz_trimmed[1] > 160, xyz_trimmed[2] < -140))
-        xyz_trimmed = xyz_trimmed[:, yz_trim]
-        pts2L = pts2L[:, yz_trim]
-        pts2R = pts2R[:, yz_trim]
-
-        xy_trim = np.bitwise_not(np.logical_and(xyz_trimmed[0] > 170, xyz_trimmed[1] > 175))
-        xyz_trimmed = xyz_trimmed[:, xy_trim]
-        pts2L = pts2L[:, xy_trim]
-        pts2R = pts2R[:, xy_trim]
-
-        xy_trim = xyz_trimmed[0] > 0
-        xyz_trimmed = xyz_trimmed[:, xy_trim]
-        pts2L = pts2L[:, xy_trim]
-        pts2R = pts2R[:, xy_trim]
-
+        pts3 = self.pts3
+        pts2L = self.pts2L
+        pts2R = self.pts2R
+        goodpts = np.nonzero((pts3[0, :] > boxlimits[0]) & (pts3[0, :] < boxlimits[1]) & \
+                             (pts3[1, :] > boxlimits[2]) & (pts3[1, :] < boxlimits[3]) & \
+                             (pts3[2, :] > boxlimits[4]) & (pts3[2, :] < boxlimits[5]))
+        pts3 = pts3[:, goodpts[0]]
+        pts2L = pts2L[:, goodpts[0]]
+        pts2R = pts2R[:, goodpts[0]]
         #
         # triangulate the 2D points to get the surface mesh
         #
-        triL = Delaunay(pts2L.T)
-        triR = Delaunay(pts2R.T)
-
-        trianglesL = pts2L.T[triL.simplices]
-        trianglesR = pts2R.T[triR.simplices]
+        # compute initial triangulation
+        triangles = Delaunay(pts2L.T)
+        tri = triangles.simplices
         #
         # triangle pruning
         #
+        d01 = np.sqrt(np.sum(np.power(pts3[:, tri[:, 0]] - pts3[:, tri[:, 1]], 2), axis=0))
+        d02 = np.sqrt(np.sum(np.power(pts3[:, tri[:, 0]] - pts3[:, tri[:, 2]], 2), axis=0))
+        d12 = np.sqrt(np.sum(np.power(pts3[:, tri[:, 1]] - pts3[:, tri[:, 2]], 2), axis=0))
 
         # removes the triangles based on the edge distances of each edge, if one qualifies, it is removed
         #
+        goodtri = (d01 < trithresh) & (d02 < trithresh) & (d12 < trithresh)
         # remove any points which are not refenced in any triangle
         #
-        simpL = triL.simplices
-        simpR = triR.simplices
-        edge1L = np.bitwise_not(np.absolute(np.diff(trianglesL.T[:, 0], axis=0)) > trithresh)[0]
-        edge1R = np.bitwise_not(np.absolute(np.diff(trianglesR.T[:, 0], axis=0)) > trithresh)[0]
-        trianglesL = trianglesL[edge1L]
-        trianglesR = trianglesR[edge1R]
-        simpL = simpL[edge1L]
-        simpR = simpR[edge1R]
-        edge2L = np.bitwise_not(np.absolute(np.diff(trianglesL.T[:, 1], axis=0)) > trithresh)[0]
-        edge2R = np.bitwise_not(np.absolute(np.diff(trianglesR.T[:, 1], axis=0)) > trithresh)[0]
-        trianglesL = trianglesL[edge2L]
-        trianglesR = trianglesR[edge2R]
-        simpL = simpL[edge2L]
-        simpR = simpR[edge2R]
-        edge3L = np.bitwise_not(np.absolute(np.diff(trianglesL.T[:, 2], axis=0)) > trithresh)[0]
-        edge3R = np.bitwise_not(np.absolute(np.diff(trianglesR.T[:, 2], axis=0)) > trithresh)[0]
-        self.trianglesL = trianglesL[edge3L]
-        self.trianglesR = trianglesR[edge3R]
-        self.simpL = simpL[edge3L]
-        self.simpR = simpR[edge3R]
+        tri = tri[goodtri, :]
+
+        self.triangles = triangles
+        self.simp = tri
         self.pts2L = pts2L
         self.pts2R = pts2R
+        self.pts3 = pts3
+
+    def show(self, num_pts3=0, num_mesh=0, num_pts2=False, mayavi=False, mesh=False):
+        length = (np.max(self.pts3) - np.min(self.pts3)) / 15
+        lookL = np.hstack((self.camL.t, self.camL.t + self.camL.R @ np.array([[0, 0, length]]).T))
+        lookR = np.hstack((self.camR.t, self.camR.t + self.camR.R @ np.array([[0, 0, length]]).T))
+
+        if num_pts2:
+            fig = plt.figure()
+            ax = fig.add_subplot(1, 1, 1)
+            ax.plot(self.pts3[0, :], self.pts3[2, :], '.')
+            ax.plot(self.camR.t[0], self.camR.t[2], 'ro')
+            ax.plot(self.camL.t[0], self.camL.t[2], 'bo')
+            ax.plot(lookL[0, :], lookL[2, :], 'b')
+            ax.plot(lookR[0, :], lookR[2, :], 'r')
+            plt.title('XZ-view')
+            plt.grid()
+            plt.xlabel('x')
+            plt.ylabel('z')
+            plt.show()
+
+            fig = plt.figure()
+            ax = fig.add_subplot(1, 1, 1)
+            ax.plot(self.pts3[1, :], self.pts3[2, :], '.', animated=True)
+            ax.plot(self.camR.t[1], self.camR.t[2], 'ro', animated=True)
+            ax.plot(self.camL.t[1], self.camL.t[2], 'bo', animated=True)
+            ax.plot(lookL[1, :], lookL[2, :], 'b', animated=True)
+            ax.plot(lookR[1, :], lookR[2, :], 'r', animated=True)
+            plt.title('YZ-view')
+            plt.grid()
+            plt.xlabel('y')
+            plt.ylabel('z')
+            plt.show()
+
+            fig = plt.figure()
+            ax = fig.add_subplot(1, 1, 1)
+            ax.plot(self.pts3[0, :], self.pts3[1, :], '.')
+            ax.plot(self.camR.t[0], self.camR.t[1], 'ro')
+            ax.plot(self.camL.t[0], self.camL.t[1], 'bo')
+            ax.plot(lookL[0, :], lookL[1, :], 'b')
+            ax.plot(lookR[0, :], lookR[1, :], 'r')
+            plt.title('XY-view')
+            plt.grid()
+            plt.xlabel('x')
+            plt.ylabel('y')
+            plt.show()
+
+        for i in range(num_pts3):
+            fig = plt.figure()
+            ax = fig.gca(projection="3d")
+            ax.view_init(azim=(i * 45))
+            ax.plot(self.pts3[0, :], self.pts3[1, :], self.pts3[2, :], '.')
+            ax.plot(self.camR.t[0], self.camR.t[1], self.camR.t[2], 'ro')
+            ax.plot(self.camL.t[0], self.camL.t[1], self.camL.t[2], 'bo')
+            ax.plot(lookL[0, :], lookL[1, :], lookL[2, :], 'b')
+            ax.plot(lookR[0, :], lookR[1, :], lookR[2, :], 'r')
+            visutils.set_axes_equal_3d(ax)
+            visutils.label_axes(ax)
+            plt.show()
+
+        for i in range(num_mesh):
+            fig = plt.figure()
+            x, y, z = self.pts3
+            ax = fig.gca(projection="3d")
+            ax.plot_trisurf(x, y, z, triangles=self.simp, cmap=plt.cm.Spectral)
+            ax.view_init(azim=50 * i)
+            plt.show()
+
+        if mayavi:
+            x, y, z = self.pts3
+            plot3d(x,y,z, representation='points')
+
+        if mesh:
+            x, y, z = self.pts3
+            triangular_mesh(x, y, z, self.triangles)
+
+
 
     def __add__(self, other):
         # TODO: add other decoders so that they mesh together
@@ -327,10 +339,10 @@ class Decoder:
         pass
 
     def __str__(self):
-        decoder = "{\n"
+        decoder = ""
         for key in self.keys:
-            decoder += "\t" + key + ":\t" + str(eval('self.' + key)) + ",\n"
-        decoder += "}"
+            decoder += key + ":\n"
+            decoder += str(eval('self.' + key))
         return decoder
 
     def __iter__(self):
@@ -346,32 +358,11 @@ class Decoder:
 
 
 def triangulate(pts2L, camL, pts2R, camR):
-    """
+    '''
     Triangulate the set of points seen at location pts2L / pts2R in the
-    corresponding pair of cameras. Return the 3D coordinates relative
-    to the global coordinate system
-
-
-    Parameters
-    ----------
-    pts2L : 2D numpy.array (dtype=float)
-        Coordinates of N points stored in a array of shape (2,N) seen from camL camera
-
-    pts2R : 2D numpy.array (dtype=float)
-        Coordinates of N points stored in a array of shape (2,N) seen from camR camera
-
-    camL : Camera
-        The first "left" camera view
-
-    camR : Camera
-        The second "right" camera view
-
-    Returns
-    -------
-    pts3 : 2D numpy.array (dtype=float)
-        (3,N) array containing 3D coordinates of the points in global coordinates
-    """
-
+    corresponding pair of cameras. Return the 3D coords relative to the
+    Global coord system.
+    '''
     npts = pts2L.shape[1]
 
     qL = (pts2L - camL.c) / camL.f
@@ -382,20 +373,16 @@ def triangulate(pts2L, camL, pts2R, camR):
 
     R = camL.R.T @ camR.R
     t = camL.R.T @ (camR.t - camL.t)
-
-    xL = np.zeros((3, npts))
-    xR = np.zeros((3, npts))
-
+    xL = np.ones(qL.shape, dtype=float)
+    xR = np.ones(qR.shape, dtype=float)
     for i in range(npts):
         A = np.vstack((qL[:, i], -R @ qR[:, i])).T
         z, _, _, _ = np.linalg.lstsq(A, t, rcond=None)
         xL[:, i] = z[0] * qL[:, i]
         xR[:, i] = z[1] * qR[:, i]
-
     pts3L = camL.R @ xL + camL.t
     pts3R = camR.R @ xR + camR.t
-    pts3 = 0.5 * (pts3L + pts3R)
-
+    pts3 = .5 * (pts3L + pts3R)
     return pts3
 
 
@@ -426,7 +413,7 @@ def find_rmv_files(directory: Path):
     Removes all intrinsic files in the data folders.
     :param directory: Path of the data folder.
     """
-    intrinsic_file = directory / Path('intrinsic.pickle')
+    intrinsic_file = directory / Path('intrinsics.pickle')
 
     if intrinsic_file.exists():
         intrinsic_file.unlink()
@@ -443,27 +430,54 @@ if __name__ == "__main__":
     -r: Erases the previous intrinsics.
     -f: Runs a lower resolution of the images for faster calculations (for debugging).
     """
+    all = False
     intrinsic_path = None
     calib_path = None
     title = "Decoder of {} Resolution"
     if len(sys.argv) > 1:
         if '-r' in sys.argv:
             find_rmv_files(DATA_FOLDER)
-        if '-f' in sys.argv:
-            intrinsic_path = DATA_FOLDER / Path('teapot_small')
-            calib_path = DATA_FOLDER / Path('calib_png_small')
-            title = title.format('Low')
+        if '-a' in sys.argv:
+            all = True
+            title = title.format("All")
+        else:
+            if '-f' in sys.argv:
+                intrinsic_path = DATA_FOLDER / Path('teapot_small') / Path('grab_0_u')
+                calib_path = DATA_FOLDER / Path('calib_png_small')
+                title = title.format('Low')
+            else:
+                intrinsic_path = DATA_FOLDER / Path('teapot') / Path('grab_0_u')
+                calib_path = DATA_FOLDER / Path('calib_jpg_u')
+                title = title.format('High')
+
     else:
-        intrinsic_path = DATA_FOLDER / Path('teapot')
+        intrinsic_path = DATA_FOLDER / Path('teapot') / Path('grab_0_u')
         calib_path = DATA_FOLDER / Path('calib_jpg_u')
         title = title.format('High')
 
-    threshold = 0.02
+    if not all:
+        threshold = 0.02
+        camera_C0 = Camera(calib_path, 'C0', None)
+        camera_C1 = Camera(calib_path, 'C1', None)
+        decoder = Decoder('C1', 'C0', threshold, camera_C1, camera_C0, intrinsic_path)
+        print(title)
+        decoder.show(2, 2, True)
+    else:
+        threshold = 0.02
 
-    camera_C0 = Camera(calib_path, 'C0', None)
-    camera_C1 = Camera(calib_path, 'C1', None)
+        teapot = DATA_FOLDER / Path('teapot')
+        calib_large_path = DATA_FOLDER / Path('calib_jpg_u')
 
-    decoder = Decoder('C1', 'C0',threshold, camera_C1, camera_C0, intrinsic_path)
-    print(title)
-    print(decoder)
-    print()
+        for directory in teapot.iterdir():
+            camera_C0 = Camera(calib_large_path, 'C0', None)
+            camera_C1 = Camera(calib_large_path, 'C1', None)
+            decoder = Decoder('C1', 'C0', threshold, camera_C1, camera_C0, directory)
+
+        threshold = 0.008
+        teapot_small = DATA_FOLDER / Path('teapot_small')
+        calib_small_path = DATA_FOLDER / Path('calib_png_small')
+
+        for directory in teapot_small.iterdir():
+            camera_C0 = Camera(calib_small_path, 'C0', None)
+            camera_C1 = Camera(calib_small_path, 'C1', None)
+            decoder = Decoder('C1', 'C0', threshold, camera_C1, camera_C0, directory)
