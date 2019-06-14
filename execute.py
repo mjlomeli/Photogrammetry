@@ -36,6 +36,14 @@ def imports():
                 '\n'
     return statement
 
+def test_mayavi():
+    statement = 'import random\n' + \
+                'import numpy as np\n' + \
+                'from mayavi.mlab import *\n' + \
+                'x,y,z = np.array(random.sample(range(100), 3)),np.array(random.sample(range(100), 3)),np.array(random.sample(range(100), 3))\n' + \
+                'plot3d(x,y,z, representation="points")\n' + \
+                '\n'
+    return statement
 
 def show(pts):
     plt.imshow(pts, cmap='gray')
