@@ -79,7 +79,6 @@ class Calibrate:
             printProgressBar(count, end, prefix='Calibrating', suffix='{}/{} files calibrated. '.format(count, end))
         printProgressBar(count, end, prefix='Calibrating', suffix='Saving file.            ')
         cv2.destroyAllWindows()
-
         # calibrates the camera with the list of measured objpoints and a list of pixel location of the corners.
         ret, K, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_size, None, None)
         self.fx = K[0][0]

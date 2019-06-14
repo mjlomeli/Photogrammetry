@@ -8,7 +8,6 @@ def imports():
                 'from matplotlib import pyplot as plt\n' + \
                 'import sys\n' + \
                 'import pickle\n' + \
-                'import gdal\n' + \
                 'from mayavi.mlab import *\n' + \
                 'from scipy.spatial import Delaunay\n' + \
                 'from camera import Camera\n' + \
@@ -35,6 +34,7 @@ def imports():
                 'simp = decoder.simp\n' + \
                 '\n'
     return statement
+
 
 def test_mayavi():
     statement = 'import random\n' + \
