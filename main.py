@@ -7,7 +7,7 @@ Second, the decoding process is started and the data is stored.
 """
 
 import sys
-from decoder import Decoder
+import subprocess as sub
 from calibrate import Calibrate
 from pathlib import Path
 
@@ -16,12 +16,6 @@ __date__ = "6/10/2019"
 __maintainer__ = "Mauricio Lomeli"
 __email__ = "mjlomeli@uci.edu"
 __status__ = "Prototype"
-
-CALIB_PATH = Path.cwd() / Path("data")
-IMAGES_PATH = Path.cwd() / Path("data")
-
-def main():
-    calibrate = Calibrate(CALIB_PATH)
 
 def find_rmv_files(directory: Path):
     """
@@ -44,17 +38,14 @@ def find_rmv_files(directory: Path):
 if __name__ == "__main__":
     """
     Runs the program:
-        python main.py [-r] [-f]
+        python main.py [-r]
     -r: Erases the previous calibrations and calculations.
-    -f: Runs a lower resolution of the images for faster debugging.
     """
     if len(sys.argv) > 1:
         if '-r' in sys.argv:
             find_rmv_files(Path.cwd() / Path('data'))
-        if '-f' in sys.argv:
-            CALIB_PATH = CALIB_PATH / Path('calib_png_small')
-            IMAGES_PATH = IMAGES_PATH / Path('teapot_small')
-        else:
-            CALIB_PATH = CALIB_PATH / Path('calib_jpg_u')
-            IMAGES_PATH = IMAGES_PATH / Path('teapot')
-    main()
+            sub.run(['python', 'decoder.py', '-a'])
+
+    else:
+        sub.run(['python', 'decoder.py', '-a'])
+

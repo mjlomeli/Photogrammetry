@@ -3,6 +3,8 @@
 
 A pixel in each camera image is decoded by looking at the sequence of black and white shades across all the frames.
 Images are encoded into binary and translated to graycode, then decoded into decimal.
+
+Note: to use GUI '%gui qt' must be ran in the console
 """
 
 import sys
@@ -14,6 +16,7 @@ from pathlib import Path
 from camera import Camera
 import visutils
 from mayavi.mlab import *
+import random
 
 
 DATA_FOLDER = Path.cwd() / Path("data")
@@ -44,7 +47,7 @@ class Decoder:
             self.camL = camL
             self.camR = camR
             self.pickle_file = path / Path('intrinsics.pickle')
-            self.mask_C0, self.mask_C1 = self.get_mask(0.1)
+            self.mask_C0, self.mask_C1 = self.get_mask(0.12)
             if self.pickle_file.exists():
                 self.get_pickle()
             else:
@@ -60,13 +63,13 @@ class Decoder:
         :param threshold: amount difference to allow in the image
         :return: tuple, numpy array (N,M) masks of boolean values
         """
-        background_C0 = plt.imread(str(self.path / Path('color_C0_00.png')))
-        background_C1 = plt.imread(str(self.path / Path('color_C1_00.png')))
-        foreground_C0 = plt.imread(str(self.path / Path('color_C0_01.png')))
-        foreground_C1 = plt.imread(str(self.path / Path('color_C1_01.png')))
+        self.background_C0 = plt.imread(str(self.path / Path('color_C0_00.png')))
+        self.background_C1 = plt.imread(str(self.path / Path('color_C1_00.png')))
+        self.foreground_C0 = plt.imread(str(self.path / Path('color_C0_01.png')))
+        self.foreground_C1 = plt.imread(str(self.path / Path('color_C1_01.png')))
 
-        mask_C0 = (np.sum(np.abs(foreground_C0 - background_C0), axis=2) > threshold).astype(bool)
-        mask_C1 = (np.sum(np.abs(foreground_C1 - background_C1), axis=2) > threshold).astype(bool)
+        mask_C0 = (np.sum(np.abs(self.foreground_C0 - self.background_C0), axis=2) > threshold).astype(bool)
+        mask_C1 = (np.sum(np.abs(self.foreground_C1 - self.background_C1), axis=2) > threshold).astype(bool)
 
         return mask_C0, mask_C1
 
@@ -84,6 +87,11 @@ class Decoder:
             self.camR = intrinsics.camR
             self.simp = intrinsics.simp
             self.triangles = intrinsics.triangles
+            self.images_masked = intrinsics.images_masked
+            self.code = intrinsics.code
+            self.mask = intrinsics.mask
+            self.goodtri = intrinsics.goodtri
+            self.vertices = intrinsics.vertices
 
     def write_pickle(self):
         """
@@ -104,6 +112,7 @@ class Decoder:
         :param threshold: decodability threshold
         :return: code, mask : 2D numpy.array (dtype=float)
         """
+        self.images_masked = []
         images = None
         nbits = 10
         count = 0
@@ -117,8 +126,10 @@ class Decoder:
                 img = np.average(img, axis=-1)
             if 'frame_C0_' in imprefix:
                 img *= self.mask_C0
+                self.images_masked.append(img)
             elif 'frame_C1_' in imprefix:
                 img *= self.mask_C1
+                self.images_masked.append(img)
             if images is None:
                 images = np.array([img])
             else:
@@ -150,6 +161,7 @@ class Decoder:
         file_count += 1
         printProgressBar(count + 1, end, 'Decoding {}'.format(self.path.name),
                          '{}/{} Finished decoding.'.format(file_count, nbits))
+        self.code, self.mask = code, mask
         return code, mask
 
     def reconstruct(self, imprefixL, imprefixR, threshold, camL, camR):
@@ -250,11 +262,21 @@ class Decoder:
 
         self.triangles = triangles
         self.simp = tri
+        self.vertices = triangles.vertices
+        self.goodtri = goodtri
         self.pts2L = pts2L
         self.pts2R = pts2R
         self.pts3 = pts3
 
-    def show(self, num_pts3=0, num_mesh=0, num_pts2=False, mayavi=False, mesh=False):
+    def show(self, num_pts3=0, num_mesh=0, num_pts2=False, mayavi=False, mesh=False, img=True):
+        """
+        Quick way to view results of the data. Mayavi is much faster and easier to use. It
+        utilizes the GPU of a computer to render.
+        :param mayavi: if True, displays point/scatter plot
+        :param mesh: if True, displays a mesh
+        :param img: if True, displays the image
+        :return:
+        """
         length = (np.max(self.pts3) - np.min(self.pts3)) / 15
         lookL = np.hstack((self.camL.t, self.camL.t + self.camL.R @ np.array([[0, 0, length]]).T))
         lookR = np.hstack((self.camR.t, self.camR.t + self.camR.R @ np.array([[0, 0, length]]).T))
@@ -320,15 +342,20 @@ class Decoder:
             ax.view_init(azim=50 * i)
             plt.show()
 
+        if img:
+            plt.imshow(random.choice(self.images_masked), cmap='gray')
+            plt.show()
+
+
         if mayavi:
             x, y, z = self.pts3
+            assert (x.shape == y.shape and x.shape == z.shape)
             plot3d(x,y,z, representation='points')
 
         if mesh:
             x, y, z = self.pts3
-            triangular_mesh(x, y, z, self.triangles)
-
-
+            assert (x.shape == y.shape and x.shape == z.shape)
+            triangular_mesh(x, y, z, self.triangles, colormap='Spectral')
 
     def __add__(self, other):
         # TODO: add other decoders so that they mesh together
@@ -358,11 +385,16 @@ class Decoder:
 
 
 def triangulate(pts2L, camL, pts2R, camR):
-    '''
+    """
     Triangulate the set of points seen at location pts2L / pts2R in the
     corresponding pair of cameras. Return the 3D coords relative to the
     Global coord system.
-    '''
+    :param pts2L: 2D points as seen in the left camera
+    :param camL: the left camera
+    :param pts2R: 2D points as seen in the right camera
+    :param camR: the right camera
+    :return: pts3, the (3, N) points in relation to pts2L & pts3L
+    """
     npts = pts2L.shape[1]
 
     qL = (pts2L - camL.c) / camL.f
@@ -460,8 +492,6 @@ if __name__ == "__main__":
         camera_C0 = Camera(calib_path, 'C0', None)
         camera_C1 = Camera(calib_path, 'C1', None)
         decoder = Decoder('C1', 'C0', threshold, camera_C1, camera_C0, intrinsic_path)
-        print(title)
-        decoder.show(2, 2, True)
     else:
         threshold = 0.02
 

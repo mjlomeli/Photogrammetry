@@ -1,7 +1,11 @@
+from IPython import qt
 from matplotlib import pyplot as plt
 import numpy as np
 
 def imports():
+    """
+    Note: to use GUI '%gui qt' must be ran in the console
+    """
     statement = 'from pathlib import Path\n' +\
                 'import numpy as np\n' +\
                 'import cv2\n' +\
@@ -37,6 +41,9 @@ def imports():
 
 
 def test_mayavi():
+    """
+    Note: to use GUI '%gui qt' must be ran in the console
+    """
     statement = 'import random\n' + \
                 'import numpy as np\n' + \
                 'from mayavi.mlab import *\n' + \
@@ -44,6 +51,7 @@ def test_mayavi():
                 'plot3d(x,y,z, representation="points")\n' + \
                 '\n'
     return statement
+
 
 def show(pts):
     plt.imshow(pts, cmap='gray')
