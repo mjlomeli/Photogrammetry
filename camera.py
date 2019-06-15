@@ -79,6 +79,11 @@ class Camera(Calibrate):
         self.write_pickle()
 
     def align_cameras(self, chess_size, square_length):
+        """
+        Finds the calibration among the camera and the provided 3D points.
+        :param chess_size: n x m number of cross points
+        :param square_length: length of each square on the board
+        """
         pts2 = self.corners.squeeze().T
         pts3 = np.zeros((3,chess_size[0]*chess_size[1]))
         yy, xx = np.meshgrid(np.arange(chess_size[1]), np.arange(chess_size[0]))

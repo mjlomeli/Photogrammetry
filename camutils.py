@@ -1,34 +1,14 @@
 import numpy as np
 import scipy.optimize
-import matplotlib.pyplot as plt
-
-def makerotation(rx,ry,rz):
-    """
-    Provides a rotation matrix based on the rotation angles of each axis.
-    :param rx: degree, rotation about the x-axis
-    :param ry: degree, rotation about the x-axis
-    :param rz: degree, rotation about the x-axis
-    :return: 3D rotation matrix
-    """
-    x, y, z = np.deg2rad(rx), np.deg2rad(ry), np.deg2rad(ry)
-
-    x_rot = np.array([[1, 0, 0], [0, np.cos(x), -np.sin(x)], [0, np.sin(x), np.cos(x)]])
-    y_rot = np.array([[np.cos(y), 0, -np.sin(y)], [0, 1, 0], [np.sin(y), 0, np.cos(y)]])
-    z_rot = np.array([[np.cos(z), -np.sin(rz), 0], [np.sin(rz), np.cos(rz), 0], [0, 0, 1]])
-    
-    return x_rot @ y_rot @ z_rot
 
 class Camera:
     """
-    A simple data structure describing camera parameters 
-    
+    A simple data structure describing camera parameters
     The parameters describing the camera
     cam.f : float   --- camera focal length (in units of pixels)
     cam.c : 2x1 vector  --- offset of principle point
     cam.R : 3x3 matrix --- camera rotation
-    cam.t : 3x1 vector --- camera translation 
-
-    
+    cam.t : 3x1 vector --- camera translation
     """    
     def __init__(self,f,c,R,t):
         self.f = f
@@ -37,22 +17,17 @@ class Camera:
         self.t = t
 
     def __str__(self):
+        """
+        Prints out a string representation of the Camera
+        :return: string
+        """
         return f'Camera : \n f={self.f} \n c={self.c.T} \n R={self.R} \n t = {self.t.T}'
     
     def project(self,pts3):
         """
-        Project the given 3D points in world coordinates into the specified camera    
-
-        Parameters
-        ----------
-        pts3 : 2D numpy.array (dtype=float)
-            Coordinates of N points stored in a array of shape (3,N)
-
-        Returns
-        -------
-        pts2 : 2D numpy.array (dtype=float)
-            Image coordinates of N points stored in an array of shape (2,N)
-
+        Project the given 3D points in world coordinates into the specified camera
+        :param pts3: Coordinates of N points stored in a array of shape (3,N)
+        :return: Image coordinates of N points stored in an array of shape (2,N)
         """
         assert(pts3.shape[0]==3)
 
@@ -74,17 +49,27 @@ class Camera:
         """
         Given a vector of extrinsic parameters, update the camera
         to use the provided parameters.
-  
-        Parameters
-        ----------
-        params : 1D numpy.array (dtype=float)
-            Camera parameters we are optimizing over stored in a vector
-            params[0:2] are the rotation angles, params[2:5] are the translation
-
+        :param params: Camera parameters we are optimizing over stored in a vector
         """
         self.R = makerotation(params[0],params[1],params[2])
-        self.t = np.array([[params[3]],[params[4]],[params[5]]])
+        self.t = np.array([params[3:]]).T
 
+
+def makerotation(rx, ry, rz):
+    """
+    Provides a rotation matrix based on the rotation angles of each axis.
+    :param rx: degree, rotation about the x-axis
+    :param ry: degree, rotation about the x-axis
+    :param rz: degree, rotation about the x-axis
+    :return: 3D rotation matrix
+    """
+    x, y, z = np.deg2rad(rx), np.deg2rad(ry), np.deg2rad(ry)
+
+    x_rot = np.array([[1, 0, 0], [0, np.cos(x), -np.sin(x)], [0, np.sin(x), np.cos(x)]])
+    y_rot = np.array([[np.cos(y), 0, -np.sin(y)], [0, 1, 0], [np.sin(y), 0, np.cos(y)]])
+    z_rot = np.array([[np.cos(z), -np.sin(rz), 0], [np.sin(rz), np.cos(rz), 0], [0, 0, 1]])
+
+    return x_rot @ y_rot @ z_rot
 
 def triangulate(pts2L,camL,pts2R,camR):
     """

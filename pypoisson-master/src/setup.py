@@ -5,7 +5,7 @@ from Cython.Distutils import build_ext
 import numpy
 
 sources = ["pypoisson.pyx"]
-path = "PoissonRecon_v6_13/src/"
+path = "pypoisson-master/src/"
 files = [os.path.join(path,x) for x in os.listdir(path) if x.endswith(".cpp")]
 sources += files
 

@@ -48,4 +48,3 @@ if __name__ == "__main__":
 
     else:
         sub.run(['python', 'decoder.py', '-a'])
-
